@@ -1,12 +1,13 @@
+use regex::Regex;
 use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use regex::Regex;
 
 #[derive(Default, Debug)]
 struct DiskInfo {
     disk_num: String,
     model: String,
+    firmware_revision: String,
     serial: String,
     power_on_time: String,
     lifetime_writes: String,
@@ -28,6 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut disks = Vec::new();
     let mut current_disk = DiskInfo {
+        firmware_revision: "Unknown".to_string(),
         power_on_time: "Unknown".to_string(),
         lifetime_writes: "Unknown".to_string(),
         manufacture_date: "Unknown".to_string(),
@@ -36,6 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let re_disk_num = Regex::new(r"Hard Disk Number [\. ]+ : (\d+)")?;
     let re_model = Regex::new(r"Hard Disk Model ID [\. ]+ : (.+)")?;
+    let re_firmware_revision = Regex::new(r"Firmware Revision [\. ]+ : (.+)")?;
     let re_serial = Regex::new(r"Hard Disk Serial Number [\. ]+ : (.+)")?;
     // Some lines have "(estimated)" at the end, so we make it optional in regex if needed, or just match numbers.
     let re_power_on = Regex::new(r"Power On Time [\. ]+ : (\d+) days, (\d+) hours, (\d+) minutes")?;
@@ -48,6 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if !current_disk.disk_num.is_empty() {
                 disks.push(current_disk);
                 current_disk = DiskInfo {
+                    firmware_revision: "Unknown".to_string(),
                     power_on_time: "Unknown".to_string(),
                     lifetime_writes: "Unknown".to_string(),
                     manufacture_date: "Unknown".to_string(),
@@ -60,6 +64,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             current_disk.disk_num = caps[1].trim().to_string();
         } else if let Some(caps) = re_model.captures(&line) {
             current_disk.model = caps[1].trim().to_string();
+        } else if let Some(caps) = re_firmware_revision.captures(&line) {
+            current_disk.firmware_revision = caps[1].trim().to_string();
         } else if let Some(caps) = re_serial.captures(&line) {
             current_disk.serial = caps[1].trim().to_string();
         } else if let Some(caps) = re_power_on.captures(&line) {
@@ -73,18 +79,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             current_disk.manufacture_date = caps[1].trim().to_string();
         }
     }
-    
+
     if !current_disk.disk_num.is_empty() {
         disks.push(current_disk);
     }
 
     let mut wtr = csv::Writer::from_path(output_path)?;
-    wtr.write_record(&["Disk #", "Model", "Serial Number", "Power On Time", "Lifetime Writes", "Manufacture Date"])?;
-    
+    wtr.write_record(&[
+        "Disk #",
+        "Model",
+        "Firmware Revision",
+        "Serial Number",
+        "Power On Time",
+        "Lifetime Writes",
+        "Manufacture Date",
+    ])?;
+
     for d in &disks {
         wtr.write_record(&[
             &d.disk_num,
             &d.model,
+            &d.firmware_revision,
             &d.serial,
             &d.power_on_time,
             &d.lifetime_writes,
@@ -93,6 +108,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     wtr.flush()?;
 
-    println!("Successfully parsed {} disks into {}", disks.len(), output_path);
+    println!(
+        "Successfully parsed {} disks into {}",
+        disks.len(),
+        output_path
+    );
     Ok(())
 }

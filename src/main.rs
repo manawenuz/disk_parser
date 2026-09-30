@@ -40,8 +40,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let re_model = Regex::new(r"Hard Disk Model ID [\. ]+ : (.+)")?;
     let re_firmware_revision = Regex::new(r"Firmware Revision [\. ]+ : (.+)")?;
     let re_serial = Regex::new(r"Hard Disk Serial Number [\. ]+ : (.+)")?;
-    // Some lines have "(estimated)" at the end, so we make it optional in regex if needed, or just match numbers.
-    let re_power_on = Regex::new(r"Power On Time [\. ]+ : (\d+) days, (\d+) hours, (\d+) minutes")?;
+    // Days/hours/minutes are each optional; some disks report only days and
+    // hours, and some lines end with "(estimated)".
+    let re_power_on = Regex::new(r"Power On Time [\. ]+ : (.+)")?;
+    let re_power_on_days = Regex::new(r"(\d+) days")?;
+    let re_power_on_hours = Regex::new(r"(\d+) hours")?;
+    let re_power_on_minutes = Regex::new(r"(\d+) minutes")?;
     let re_writes = Regex::new(r"Lifetime Writes [\. ]+ : (.+)")?;
     let re_mfg_date = Regex::new(r"Manufacture date \(year/week\)\s+(\d{4}/\d{2})")?;
 
@@ -69,10 +73,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else if let Some(caps) = re_serial.captures(&line) {
             current_disk.serial = caps[1].trim().to_string();
         } else if let Some(caps) = re_power_on.captures(&line) {
-            let days = &caps[1];
-            let hours = &caps[2];
-            let minutes = &caps[3];
-            current_disk.power_on_time = format!("{} days, {}h {}m", days, hours, minutes);
+            let value = caps[1].trim();
+            let mut parts: Vec<String> = Vec::new();
+            if let Some(d) = re_power_on_days.captures(value) {
+                parts.push(format!("{} days", &d[1]));
+            }
+            if let Some(h) = re_power_on_hours.captures(value) {
+                parts.push(format!("{}h", &h[1]));
+            }
+            if let Some(m) = re_power_on_minutes.captures(value) {
+                parts.push(format!("{}m", &m[1]));
+            }
+            if !parts.is_empty() {
+                let mut power_on_time = parts.join(", ");
+                if value.contains("(estimated)") {
+                    power_on_time.push_str(" (estimated)");
+                }
+                current_disk.power_on_time = power_on_time;
+            }
         } else if let Some(caps) = re_writes.captures(&line) {
             current_disk.lifetime_writes = caps[1].trim().to_string();
         } else if let Some(caps) = re_mfg_date.captures(&line) {
